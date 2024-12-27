@@ -14,7 +14,12 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 import pandas as pd
 import numpy as np
 
+from nltk.corpus import stopwords
+import nltk
+import re
+
 # stanza for NLP preprocessing
+!pip install stanza
 import stanza
 
 # sklearn libraries for models and evaulation metrics
@@ -42,39 +47,35 @@ from tqdm import tqdm
 stanza.download("tr", verbose=False)
 print("Stanza Turkish model downloaded!")
 
-nlp = stanza.Pipeline("tr", use_gpu=False)
+nlp = stanza.Pipeline("tr", use_gpu=True)
 
 print("Libraries and NLTK datasets loaded!")
 
-# Preprocess the dataset
-def preprocess_text(text):
-    """
-    Preprocess a single text: tokenization, stopword removal, and lemmatization.
-    """
+nltk.download("stopwords")
+stop_words = set(stopwords.words("turkish"))
+
+# function: remove special char
+def remove_special_characters(text):
+    text = re.sub(r'[^\w\s]', '', text)
+    text = re.sub(r'[\U00010000-\U0010FFFF]', '', text)
+    return text
+
+# preprocessing function
+def preprocess_text_stanza(text):
+    text = remove_special_characters(text.lower())
+
     doc = nlp(text)
-    tokens = [
-        word.lemma for sent in doc.sentences for word in sent.words if word.upos != "PUNCT"
+    lemmatized_tokens = [
+        word.lemma if word.lemma is not None else word.text
+        for sentence in doc.sentences for word in sentence.words
+        if word.text.isalpha() and word.text not in stop_words
     ]
-    return " ".join(tokens)
+    return " ".join(lemmatized_tokens)
 
-# Convert dataset to pandas DataFrame
-train_data = dataset['train']
-df = pd.DataFrame(train_data)
+tqdm.pandas()
 
-# Preprocess the text column
-print("Preprocessing text data...")
-df['processed_text'] = df['text'].apply(preprocess_text)
+train = dataset['train']
+train = train.to_pandas()
+train["cleaned_text"] = train["text"].progress_apply(preprocess_text_stanza)
 
-# Splitting the dataset into train and test sets
-print("Splitting dataset into train and test sets...")
-X = df['processed_text']
-y = df['label']  # Adjust 'label' to your actual label column name if different
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Transforming text into numerical features using TF-IDF
-print("Applying TF-IDF vectorization...")
-vectorizer = TfidfVectorizer(max_features=5000)
-X_train_tfidf = vectorizer.fit_transform(X_train)
-X_test_tfidf = vectorizer.transform(X_test)
-
-print("Data preprocessing completed!")
+train
