@@ -15,7 +15,7 @@ test_sentences = [
     "Bugün hava oldukça güzel.",      # Non-Toxic
     "Sen nasıl bir piç kurususun lan",  # Toxic
     "Kürtler gerizekalı.",      # Toxic
-    "Kadınlar araba kullanmayı beceremez.", # Non-Toxic
+    "Kadınlar araba kullanmayı beceremez.", # Toxic
     "Bitti demediniz mi", # Non-Toxic
 ]
 
