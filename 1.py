@@ -1,5 +1,6 @@
 #!pip install datasets stanza
 #!pip install transformers
+#!pip install fasttext
 
 from datasets import load_dataset
 
@@ -15,9 +16,10 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 import pandas as pd
 import numpy as np
 
-# nltk for stopwords
+# nltk for stopwords and stemmer
 from nltk.corpus import stopwords
 import nltk
+from nltk.stem import PorterStemmer
 
 #re for clean special char
 import re
@@ -57,6 +59,12 @@ import seaborn as sns
 # progress bar for data processing
 from tqdm import tqdm
 
+from google.colab import drive
+drive.mount('/content/drive')
+
+#fasttext for model training
+import fasttext
+
 # install and download stanza's turkish model
 stanza.download("tr", verbose=False)
 print("Stanza Turkish model downloaded!")
@@ -79,13 +87,19 @@ def preprocess_text_stanza(text):
     text = remove_special_characters(text.lower())
 
     doc = nlp(text)
-    lemmatized_tokens = [
-        word.lemma if word.lemma is not None else word.text
-        for sentence in doc.sentences for word in sentence.words
-        if word.text.isalpha() and word.text not in stop_words
-    ]
-    return " ".join(lemmatized_tokens)
+    processed_tokens = []
 
+    for sentence in doc.sentences:
+        for word in sentence.words:
+            if word.text.isalpha() and word.text not in stop_words:
+                if word.lemma is not None:
+                    processed_tokens.append(word.lemma)
+                else:
+                    processed_tokens.append(word.text[:5] if len(word.text) > 5 else word.text)
+
+    return " ".join(processed_tokens)
+
+print("Preprocessing dataset...")
 tqdm.pandas()
 
 train = dataset['train']
@@ -94,234 +108,242 @@ train["cleaned_text"] = train["text"].progress_apply(preprocess_text_stanza)
 
 train
 
-X = train["cleaned_text"]
-y = train["is_toxic"]
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-print(train.isnull().sum())
+output_file = "/content/drive/My Drive/cleaned_dataset.csv"
 
-# we use a pre-trained bert model
-model_name = "dbmdz/bert-base-turkish-cased"
+train.to_csv(output_file, index=False, encoding="utf-8")
 
-# tokenizer & model
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
+print(f"Cleaned dataset saved to Google Drive at {output_file}")
 
-class ToxicDataset(Dataset):
-    def __init__(self, texts, labels, tokenizer, max_len=128):
-        self.texts = texts
-        self.labels = labels
-        self.tokenizer = tokenizer
-        self.max_len = max_len
+input_file = "/content/drive/My Drive/cleaned_dataset.csv"
 
-    def __len__(self):
-        return len(self.texts)
+train = pd.read_csv(input_file, encoding="utf-8")
 
-    def __getitem__(self, idx):
-        text = self.texts.iloc[idx]
-        label = self.labels.iloc[idx]
-        encoding = self.tokenizer(
-            text,
-            truncation=True,
-            padding="max_length",
-            max_length=self.max_len,
-            return_tensors="pt",
-        )
-        return {
-            "input_ids": encoding["input_ids"].squeeze(0),
-            "attention_mask": encoding["attention_mask"].squeeze(0),
-            "labels": torch.tensor(label, dtype=torch.long),
-        }
+train
 
-# datasets preparation
-train_dataset = ToxicDataset(X_train, y_train, tokenizer)
-test_dataset = ToxicDataset(X_test, y_test, tokenizer)
+train = train.dropna(subset=["cleaned_text"])
 
-# training settings
-training_args = TrainingArguments(
-    output_dir="./results",
-    evaluation_strategy="epoch",
-    save_strategy="epoch",
-    learning_rate=2e-5,
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=16,
-    num_train_epochs=3,
-    weight_decay=0.01,
-    logging_dir="./logs",
-    report_to="none",
-    logging_steps=10,
-    load_best_model_at_end=True,
-    save_total_limit=1,
+def convert_turkish_to_english(text):
+    turkish_to_english = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+    return text.translate(turkish_to_english)
+
+print("Expanding dataset with Turkish and English character versions...")
+
+train_turkish = train.copy()
+train_english = train.copy()
+train_english.loc[:, "cleaned_text"] = train_english["cleaned_text"].progress_apply(convert_turkish_to_english)
+
+train_expanded = pd.concat([train_turkish, train_english], ignore_index=True)
+
+print(f"Dataset expanded. Original size: {len(train_turkish)}, Expanded size: {len(train_expanded)}")
+
+train
+
+# Custom tokenizer
+def fasttext_tokenizer(text):
+    turkish_to_english = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+    text = text.translate(turkish_to_english)
+    text = text.lower()
+    return text
+
+train["fasttext_format"] = "__label__" + train["is_toxic"].astype(str) + " " + train["cleaned_text"].apply(fasttext_tokenizer)
+
+# Save training and test data
+train_file = "/content/drive/My Drive/fasttext_train.txt"
+test_file = "/content/drive/My Drive/fasttext_test.txt"
+
+train_data = train.sample(frac=0.8, random_state=42).copy()
+test_data = train.drop(train_data.index).copy()
+
+train_data["fasttext_format"].to_csv(train_file, index=False, header=False)
+test_data["fasttext_format"].to_csv(test_file, index=False, header=False)
+
+print("FastText dataset prepared and saved.")
+
+
+model = fasttext.train_supervised(
+    input=train_file,
+    lr=0.1,
+    epoch=25,
+    wordNgrams=3,
+    bucket=200000,
+    dim=100,
+    loss="softmax"
 )
 
-# trainer (Hugging Face Trainer API)
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=train_dataset,
-    eval_dataset=test_dataset,
-    tokenizer=tokenizer,
-)
-
-trainer.train()
-
-# which epoch is used
-best_checkpoint = trainer.state.best_model_checkpoint
-checkpoint_step = int(re.search(r"checkpoint-(\d+)", best_checkpoint).group(1))
-total_training_steps = len(train_dataset) // training_args.per_device_train_batch_size
-steps_per_epoch = total_training_steps // training_args.num_train_epochs
-epoch_used = checkpoint_step / steps_per_epoch
-print(f"Best model is from epoch: {epoch_used:.2f}")
+model_file = "/content/drive/My Drive/toxicity_model.bin"
+model.save_model(model_file)
 
 # classification report
 
+model_file = "/content/drive/My Drive/toxicity_model.bin"
+model = fasttext.load_model(model_file)
 
-predictions = trainer.predict(test_dataset)
-predicted_labels = torch.argmax(torch.tensor(predictions.predictions), dim=1)
+test_sentences = test_data["cleaned_text"].tolist()
+test_labels = test_data["is_toxic"].tolist()
 
-# performance metrics
+predictions = [int(model.predict(sentence)[0][0].replace("__label__", "")) for sentence in test_sentences]
+
 print("Classification Report:")
-print(classification_report(y_test, predicted_labels, target_names=["Non-Toxic", "Toxic"]))
+print(classification_report(test_labels, predictions, target_names=["Non-Toxic", "Toxic"]))
 
 # confusion matrix
-conf_matrix = confusion_matrix(y_test, predicted_labels)
+conf_matrix = confusion_matrix(test_labels, predictions)
 
 # visualization
 plt.figure(figsize=(8, 6))
 sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", xticklabels=["Non-Toxic", "Toxic"], yticklabels=["Non-Toxic", "Toxic"])
 plt.xlabel("Predicted Label")
 plt.ylabel("True Label")
-plt.title("Confusion Matrix")
+plt.title("Confusion Matrix for FastText Model")
 plt.show()
 
-# target column for categorization model
-X_category = train["cleaned_text"]
-y_category = train["target"]
 
-# convert categories in `target` column to numeric values
-label_encoder = LabelEncoder()
-y_category = label_encoder.fit_transform(y_category)
+# test sırasında ve modele text verirken aynı tokenizerı kullanmak zorunludur
+def fasttext_tokenizer(text):
+    turkish_to_english = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+    text = text.translate(turkish_to_english)
+    text = text.lower()
+    return text
 
-# compute class weights for imbalanced dataset
-class_weights = compute_class_weight(
-    class_weight="balanced",
-    classes=np.unique(y_category),
-    y=y_category
-)
-class_weights = torch.tensor(class_weights, dtype=torch.float)
+def test_fasttext_model(model, sentences, tokenizer):
+    predictions = []
+    for sentence in sentences:
+        processed_sentence = tokenizer(sentence)
+        prediction = model.predict(processed_sentence)[0][0].replace("__label__", "")
+        predictions.append((sentence, prediction))
+    return predictions
 
-# separate training and test sets
-X_train_cat, X_test_cat, y_train_cat, y_test_cat = train_test_split(
-    X_category, y_category, test_size=0.2, random_state=42
-)
+# testing
+test_sentences = [
+    "Sen bir aptalsın!",
+    "sen bir aptalsin",
+    "Sen bir aptalsin!",
+    "bu tamamen zararsiz bir cümle.",
+    "Bugün hava çok güzel.",
+    "Kes lan sesini",
+    "Naber lan",
+    "naber kanka",
+    "nasılsın",
+    "aga bu modeli nasıl eğiteceğiz ya",
+    "senin anan toxic",
+    "güzel günler mazide kaldı",
+    "kanka ve lan her türlü toxic oluyor",
+    "dataset ile ilgili galiba",
+    "neyse olduğu kadar"
+]
 
-# tokenizer & model
-category_tokenizer = AutoTokenizer.from_pretrained(model_name)
-category_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=len(label_encoder.classes_))
+model_file = "/content/drive/My Drive/toxicity_model.bin"
+model = fasttext.load_model(model_file)
 
-class CategoryDataset(Dataset):
-    def __init__(self, texts, labels, tokenizer, max_len=128):
-        self.texts = texts
-        self.labels = labels
-        self.tokenizer = tokenizer
-        self.max_len = max_len
+print("Testing FastText Model:")
+results = test_fasttext_model(model, test_sentences, fasttext_tokenizer)
 
-    def __len__(self):
-        return len(self.texts)
+for sentence, prediction in results:
+    label = "Toxic" if prediction == "1" else "Non-Toxic"
+    print(f"Sentence: {sentence}\nPrediction: {label}\n")
 
-    def __getitem__(self, idx):
-        text = self.texts.iloc[idx]
-        label = self.labels[idx]
-        encoding = self.tokenizer(
-            text,
-            truncation=True,
-            padding="max_length",
-            max_length=self.max_len,
-            return_tensors="pt",
-        )
-        return {
-            "input_ids": encoding["input_ids"].squeeze(0),
-            "attention_mask": encoding["attention_mask"].squeeze(0),
-            "labels": torch.tensor(label, dtype=torch.long),
-        }
+def prepare_category_fasttext_format(row):
+    label = f"__label__{row['target']}"
+    return f"{label} {row['cleaned_text']}"
 
-# datasets preparation
-train_dataset_cat = CategoryDataset(X_train_cat, y_train_cat, category_tokenizer)
-test_dataset_cat = CategoryDataset(X_test_cat, y_test_cat, category_tokenizer)
+print("Preparing category FastText format...")
+train_expanded.loc[:, "fasttext_category_format"] = train_expanded.apply(prepare_category_fasttext_format, axis=1)
 
-# custom trainer class for loss function with class weights
-class CustomTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        labels = inputs.pop("labels")
-        outputs = model(**inputs)
-        logits = outputs.get("logits")
-        loss_fct = CrossEntropyLoss(weight=class_weights.to(logits.device))
-        loss = loss_fct(logits, labels)
-        return (loss, outputs) if return_outputs else loss
+category_train_file = "/content/drive/My Drive/fasttext_category_train.txt"
+category_test_file = "/content/drive/My Drive/fasttext_category_test.txt"
 
-# training settings
-training_args_cat = TrainingArguments(
-    output_dir="./results",
-    evaluation_strategy="epoch",
-    save_strategy="epoch",
-    learning_rate=1e-5,  
-    per_device_train_batch_size=32,  
-    per_device_eval_batch_size=32,
-    num_train_epochs=5,  
-    weight_decay=0.1,  
-    gradient_accumulation_steps=2,  
-    logging_dir="./logs",
-    report_to="none",
-    logging_steps=10,
-    load_best_model_at_end=True,
-    save_total_limit=1,
+train_category_data = train_expanded.sample(frac=0.8, random_state=42).copy()
+test_category_data = train_expanded.drop(train_category_data.index).copy()
+
+train_category_data["fasttext_category_format"].to_csv(category_train_file, index=False, header=False)
+test_category_data["fasttext_category_format"].to_csv(category_test_file, index=False, header=False)
+
+print("Category FastText dataset prepared and saved.")
+
+print("Training FastText category model...")
+category_model = fasttext.train_supervised(
+    input=category_train_file,
+    lr=0.1,
+    epoch=25,
+    wordNgrams=3,
+    bucket=200000,
+    dim=100,
+    loss="softmax"
 )
 
-# trainer (Hugging Face Trainer API)
-category_trainer = CustomTrainer(
-    model=category_model,
-    args=training_args_cat,
-    train_dataset=train_dataset_cat,
-    eval_dataset=test_dataset_cat,
-    tokenizer=category_tokenizer,
-)
+category_model_file = "/content/drive/My Drive/category_model.bin"
+category_model.save_model(category_model_file)
+print(f"Category model saved to {category_model_file}")
 
-category_trainer.train()
 
-# which epoch is used for categorization model
-best_checkpoint = category_trainer.state.best_model_checkpoint
-checkpoint_step = int(re.search(r"checkpoint-(\d+)", best_checkpoint).group(1))
-total_training_steps = len(train_dataset_cat) // training_args_cat.per_device_train_batch_size
-steps_per_epoch = total_training_steps // training_args_cat.num_train_epochs
-epoch_used = checkpoint_step / steps_per_epoch
-print(f"Best model for categorization is from epoch: {epoch_used:.2f}")
+print("Evaluating category model...")
 
-# classification report for categorization model
+category_test_sentences = test_category_data["cleaned_text"].tolist()
+category_test_labels = test_category_data["target"].tolist()
 
-predictions = category_trainer.predict(test_dataset_cat)
-predicted_labels = torch.argmax(torch.tensor(predictions.predictions), dim=1)
+predicted_labels = [category_model.predict(sentence)[0][0].replace("__label__", "") for sentence in category_test_sentences]
 
-# performance metrics
-print("Classification Report for Categorization Model:")
-print(classification_report(
-    y_test_cat, 
-    predicted_labels.numpy(), 
-    target_names=label_encoder.classes_
-))
+print("Classification Report for Category Model:")
+print(classification_report(category_test_labels, predicted_labels, target_names=list(train_expanded["target"].unique())))
 
-# confusion matrix
-conf_matrix = confusion_matrix(y_test_cat, predicted_labels.numpy())
-
-# visualization of confusion matrix
+conf_matrix = confusion_matrix(category_test_labels, predicted_labels)
 plt.figure(figsize=(8, 6))
-sns.heatmap(
-    conf_matrix, 
-    annot=True, 
-    fmt="d", 
-    cmap="Blues", 
-    xticklabels=label_encoder.classes_, 
-    yticklabels=label_encoder.classes_
-)
+sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", xticklabels=list(train_expanded["target"].unique()), yticklabels=list(train_expanded["target"].unique()))
 plt.xlabel("Predicted Label")
 plt.ylabel("True Label")
-plt.title("Confusion Matrix for Categorization Model")
+plt.title("Confusion Matrix for Category Model")
 plt.show()
+
+# Test sırasında ve modele text verirken aynı tokenizer kullanılmalıdır
+def fasttext_tokenizer(text):
+    turkish_to_english = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+    text = text.translate(turkish_to_english)
+    text = text.lower()
+    return text
+
+def test_fasttext_category_model(model, sentences, tokenizer):
+    predictions = []
+    for sentence in sentences:
+        processed_sentence = tokenizer(sentence)
+        pred = model.predict(processed_sentence)
+        print(f"Raw prediction: {pred}")
+        prediction = pred[0][0]
+        predictions.append((sentence, prediction))
+    return predictions
+
+# testing
+test_sentences_category = [
+    "Sen bir aptalsın!",
+    "sen bir aptalsin",
+    "Sen bir aptalsin!",
+    "bu tamamen zararsiz bir cümle.",
+    "Bugün hava çok güzel.",
+    "Kes lan sesini",
+    "Naber lan",
+    "naber kanka",
+    "nasılsın",
+    "aga bu modeli nasıl eğiteceğiz ya",
+    "senin anan toxic",
+    "güzel günler mazide kaldı",
+    "kanka ve lan her türlü toxic oluyor",
+    "dataset ile ilgili galiba",
+    "neyse olduğu kadar",
+    "BÖYLE MODELİN AMK",
+    "lana hakaret diyen kafanı sikeyim senin"
+]
+
+category_model_file = "/content/drive/My Drive/category_model.bin"
+category_model = fasttext.load_model(category_model_file)
+
+print("Testing FastText Category Model:")
+results_category = test_fasttext_category_model(category_model, test_sentences_category, fasttext_tokenizer)
+
+for sentence, prediction in results_category:
+    category = {
+        "__label__INSULT": "INSULT",
+        "__label__PROFANITY": "PROFANITY",
+        "__label__RACIST": "RACIST",
+        "__label__SEXIST": "SEXIST",
+        "__label__OTHER": "OTHER"
+    }.get(prediction, "Unknown")
+    print(f"Sentence: {sentence}\nPredicted Category: {category}\n")
