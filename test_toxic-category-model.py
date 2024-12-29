@@ -18,7 +18,6 @@ test_sentences = [
     "Sen nasıl bir piç kurususun lan",  # Profanity
     "Kürtler gerizekalı.",      # Racist
     "Kadınlar araba kullanmayı beceremez.", # Sexist
-    "Sıkıntı yok kanka", # Deneme
 ]
 
 for sentence in test_sentences:
