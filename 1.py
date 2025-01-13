@@ -213,6 +213,13 @@ def test_fasttext_model(model, sentences, tokenizer):
         predictions.append((sentence, prediction))
     return predictions
 
+"""
+Uyarı: Aşağıdaki cümleler, modelimizi test etmek içindir.
+Herhangi bir şekilde, dini, ideolojik, siyasi, felsefi, hayat görüşü vb.
+fikrimizi yansıtma amacı taşımamaktadır.
+Modelimizin racismi, sexismi vs. tespit edip edemeyeceğini test etmek için kullanılmıştır.
+"""
+
 # testing
 test_sentences = [
     "Sen bir aptalsın!",
@@ -310,6 +317,13 @@ def test_fasttext_category_model(model, sentences, tokenizer):
         prediction = pred[0][0]
         predictions.append((sentence, prediction))
     return predictions
+
+"""
+Uyarı: Aşağıdaki cümleler, modelimizi test etmek içindir.
+Herhangi bir şekilde, dini, ideolojik, siyasi, felsefi, hayat görüşü vb.
+fikrimizi yansıtma amacı taşımamaktadır.
+Modelimizin racismi, sexismi vs. tespit edip edemeyeceğini test etmek için kullanılmıştır.
+"""
 
 # testing
 test_sentences_category = [
