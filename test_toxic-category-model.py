@@ -12,6 +12,14 @@ class_labels = {
     3: "Racist",
     4: "Sexist"
 }
+
+"""
+Uyarı: Aşağıdaki cümleler, modelimizi test etmek içindir.
+Herhangi bir şekilde, dini, ideolojik, siyasi, felsefi, hayat görüşü vb.
+fikrimizi yansıtma amacı taşımamaktadır.
+Modelimizin racismi, sexismi vs. tespit edip edemeyeceğini test etmek için kullanılmıştır.
+"""
+
 test_sentences = [
     "Bu çok aptalca bir hareketti!",  # Insult
     "Bugün hava oldukça güzel.",      # Other
