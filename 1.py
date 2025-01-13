@@ -336,6 +336,13 @@ def test_model(test_sentences, model_path="./turkish_toxic_language_detection_mo
 
     return predictions
 
+"""
+Uyarı: Aşağıdaki cümleler, modelimizi test etmek içindir.
+Herhangi bir şekilde, dini, ideolojik, siyasi, felsefi, hayat görüşü vb.
+fikrimizi yansıtma amacı taşımamaktadır.
+Modelimizin racismi, sexismi vs. tespit edip edemeyeceğini test etmek için kullanılmıştır.
+"""
+
 test_sentences = [
     "zeki insanlar kitap okumuştur",
     "suratlarına tükürsek zerre utanmazlar.. kk  pkkcıydı demi bu ... gargameline göre.. şu çağrıyı kk yapsaydı hapse atardı bu o....ları ... ",
