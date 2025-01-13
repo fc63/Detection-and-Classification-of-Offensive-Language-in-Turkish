@@ -11,6 +11,13 @@ class_labels = {
     1: "Toxic"
 }
 
+"""
+Uyarı: Aşağıdaki cümleler, modelimizi test etmek içindir.
+Herhangi bir şekilde, dini, ideolojik, siyasi, felsefi, hayat görüşü vb.
+fikrimizi yansıtma amacı taşımamaktadır.
+Modelimizin racismi, sexismi vs. tespit edip edemeyeceğini test etmek için kullanılmıştır.
+"""
+
 test_sentences = [
     "Bu çok aptalca bir hareketti!",  # Toxic
     "Bugün hava oldukça güzel.",      # Non-Toxic
