@@ -22,8 +22,8 @@ test_sentences = [
     "Bu çok aptalca bir hareketti!",  # Toxic
     "Bugün hava oldukça güzel.",      # Non-Toxic
     "Sen nasıl bir piç kurususun lan",  # Toxic
-    "Kürtler gerizekalı.",      # Toxic
-    "elinde divit kalem, katlime ferman yazar. ne anlıyorsun?", # Non-Toxic
+    "Bu armutlar tam salaklar.",      # Toxic
+    "Bu arabanın çiziği yok", # Non-Toxic
     "Bitti demediniz mi", # Non-Toxic
 ]
 
