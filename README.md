@@ -1,4 +1,4 @@
-This study aims to develop a model that detects whether a given turkish text contains toxic language.
+This study aims to train a model that detects whether a given turkish text contains toxic language.
 
 Currently developed models are generally successful at detecting toxic language, but more data and fine-tuning are needed to categorize them.
 
