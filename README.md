@@ -4,7 +4,7 @@ Currently developed models are generally successful at detecting toxic language,
 
 Models trained as part of this study:
 1. The model that i think is better than the others: https://huggingface.co/fc63/turkish-toxic-language-detection
-2. The Model that i think fails to capture the context because there is too much lemmatization and stemming in the dataset: https://huggingface.co/fc63/toxic-category-model
+2. The Model that i think fails to capture the context because there is too much lemmatization and stemming in the dataset: https://huggingface.co/fc63/toxic-classification-model
 3. The model that trained with the same processed dataset as the model in option 2, but tries to categorize as well as detect toxic language: https://huggingface.co/fc63/toxic-category-model
 4. A lightweight model trained with Fasttext using the 3-gram n-gram method that detects only toxicity.
 5. A lightweight model trained with Fasttext using the 3-gram n-gram method that both detects and categorizes toxicity.
